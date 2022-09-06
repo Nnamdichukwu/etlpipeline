@@ -1,21 +1,26 @@
 # Setup a database with the appropriate fields
-# ingest the data (csv) into python
+# ingest the sourcedb into python
 # clean the data - fillna, separate the city dict into fields
 # setup a way to check for new/modified rows
+# create target db
+#write processed dataframe into targetdb
 # send the processed data into the database
 # write a sql query to transform the data.
 # Automate reporting on the data. 
-#todo: pass variable of what the nan value should be in fillna
+
 import pandas as pd
 import pymysql.cursors
 import os
 import numpy as np
+import re
+import uszipcode
 connection = pymysql.connect(host='localhost',
                              user=os.environ['MYSQLUID'],
                              password=os.environ['MYSQLPWD'],
                              database='sourcedb',
                              charset='utf8mb4',
                              cursorclass=pymysql.cursors.DictCursor)
+sql = "SELECT * FROM user_table ORDER BY `inserted_at`"
 df = pd.read_sql(sql, connection)
 
 def preprocess_address():
@@ -100,6 +105,21 @@ engine = create_engine('sqlite://', echo=False)
 my_engine= engine.raw_connection()
 
 target_data= pd.read_sql(sql, my_engine)
+#check if state and postcode are the same
+check_state=target_data[target_data['State']==target_data['Postcode']]
+def fix_if_state_equals_postcode():
+   if len(check_state)>0:
+        for index, row in check_state.iterrows():
+            if re.search ('[0-9]',row['State']):
+               check_state['State']= search.by_zipcode(row['Postcode']).state
+            else:
+                for zipcode in search.by_city_and_state(city=row['City'],state=row['State']):
+                     check_state['Postcode'] =zipcode.zipcode
+        
+        
+target_data.update(check_state)
+
+fix_if_state_equals_postcode()
 
 #keep track of changes
 track_changes= df
@@ -113,7 +133,13 @@ modified_rows
 #Get new records
 inserts = track_changes[~track_changes.id.isin(target_data.id)]
 inserts
-
+#write initial data into the table
+def extract_and_load(): 
+    try:
+        target_data.to_sql('user_etl_job', my_engine, if_exists='fail', index=False)
+    except:
+        print("This table already loaded")
+extract_and_load()
 #update sql if the source db has been modified
 def update_to_sql():
     
@@ -129,3 +155,9 @@ def insert_new_rows():
         target_data.append(new_inserts, ignore_index=True)
         target_data.to_sql('user_etl_job',my_engine,if_exists='append', index=False)
 insert_new_rows()
+
+def generate_report():
+    sql= "SELECT `State`, COUNT(`id`)as Signups FROM user_etl_job GROUP BY `State` ORDER BY Signups DESC"
+    report = pd.read_sql(sql, my_engine)
+    report.to_csv('my report', header=['State', 'Total signups'], index=False)
+generate_report()
