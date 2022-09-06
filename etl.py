@@ -62,9 +62,6 @@ clean_postcode()
 def fillNanVals(col,replace_with):
     if df[col].isna().sum() > 0:
         df[col].fillna(replace_with, inplace= True)
-    
-    else:
-        pass
 
 
 def fillNanIds():
