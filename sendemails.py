@@ -57,5 +57,4 @@ def send_email():
         print(response['MessageId'])
 
 def lambda_handler(event, context):
-    # TODO implement
     send_email()
